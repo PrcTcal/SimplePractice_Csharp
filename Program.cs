@@ -239,49 +239,61 @@ namespace DynamoDB_intro
             Console.WriteLine("import process terminated");
         }
 
+        public JObject recurAdd(JObject param, string field){
+            string command;
+            do{
+                Console.WriteLine("[System] {0}의 항목을 입력하세요 : [type] [Field Name] [Field Value]. 입력을 중단하려면 done을 입력하세요.", field);
+                Console.Write(">> ");
+                command = Console.ReadLine();
+                string[] cmd = command.Split(" ");
+                if(cmd[0] == "s"){
+                    param.Add(cmd[1], cmd[2]);
+                } else if(cmd[0] == "n"){
+                    param.Add(cmd[1], Convert.ToInt32(cmd[2]));
+                } else if(cmd[0] == "b"){
+                    param.Add(cmd[1], Convert.ToBoolean(cmd[2]));
+                } else if(cmd[0] == "m"){
+                    param.Add(cmd[1], recurAdd(new JObject(), cmd[1]));
+                }
+            } while(command != "done");
+            return param;
+        }
+
+        public void recurEdit(JObject json, string field){
+            string command;
+            do{
+                Console.WriteLine("[System] {0}의 항목을 입력하세요 : [type] [Field Name] [Field Value]. 입력을 중단하려면 done을 입력하세요.", field);
+                Console.Write(">> ");
+                command = Console.ReadLine();
+                string[] cmd = command.Split(" ");
+                if(cmd[0] == "s"){
+                    json[cmd[1]] = cmd[2];
+                } else if(cmd[0] == "n"){
+                    json[cmd[1]] = Convert.ToInt32(cmd[2]);
+                } else if(cmd[0] == "b"){
+                    json[cmd[1]] = Convert.ToBoolean(cmd[2]);
+                } else if(cmd[0] == "m"){
+                    recurEdit((JObject)json[cmd[1]], cmd[1]);
+                }
+            } while(command != "done");
+        }
+
         public void convert(string convertOption){
             Console.WriteLine("reading export.json...");
             StreamReader sr = new StreamReader(new FileStream("./exportData/export7.json", FileMode.Open, FileAccess.Read));
             JArray jsonArray = JsonConvert.DeserializeObject<JArray>(sr.ReadToEnd());
+            sr.Close();
             Console.WriteLine("read finished - item count : " + jsonArray.Count);
-            StreamWriter sw = new StreamWriter(new FileStream("./exportData/export7.json", FileMode.OpenOrCreate, FileAccess.Write));
+            StreamWriter sw = new StreamWriter(new FileStream("./exportData/export7.json", FileMode.Create, FileAccess.Write));
+            JObject inputData = new JObject();
+            int idx = 0;
+
             switch(convertOption){
 
                 // 데이터 추가
                 case "add":
-                    string command;
-                    JObject inputData = new JObject();
-                    Console.WriteLine("[System] 추가하고자 하는 항목의 데이터를 입력해주세요");
-                    do {
-                        Console.WriteLine("[System] 입력 예시 : [type] [Field Name] [Field Value]. 입력을 중단하려면 done을 입력하세요.");
-                        Console.WriteLine(">> ");
-                        command = Console.ReadLine();
-                        string[] cmd = command.Split(" ");
-                        if(cmd[0] == "s"){
-                            inputData.Add(cmd[1], cmd[2]);
-                        } else if(cmd[0] == "n"){
-                            inputData.Add(cmd[1], Convert.ToInt32(cmd[2]));
-                        } else if(cmd[0] == "b"){
-                            inputData.Add(cmd[1], Convert.ToBoolean(cmd[2]));
-                        } else if(cmd[0] == "m"){
-                            string tempCommand;
-                            JObject info = new JObject();
-                            do{
-                                Console.WriteLine("[System] {0}의 항목을 입력하세요 : [type] [Field Name] [Field Value]. 입력을 중단하려면 done을 입력하세요.", cmd[0]);
-                                Console.WriteLine(">> ");
-                                tempCommand = Console.ReadLine();
-                                String[] tempCmd = tempCommand.Split(" ");
-                                if(tempCmd[0] == "s"){
-                                    info.Add(tempCmd[1], tempCmd[2]);
-                                } else if(tempCmd[0] == "n"){
-                                    info.Add(tempCmd[1], Convert.ToInt32(tempCmd[2]));
-                                } else if(tempCmd[0] == "b"){
-                                    info.Add(tempCmd[1], Convert.ToBoolean(tempCmd[2]));
-                                }
-                            } while(tempCommand != "done");
-                            inputData.Add(cmd[1], info);
-                        }
-                    } while(command != "done");
+                    inputData["id"] = Guid.NewGuid(); 
+                    inputData = recurAdd(inputData, "추가할 item");
                     Console.WriteLine(inputData);
                     jsonArray.Add(inputData);
                     sw.WriteLine(jsonArray.ToString());
@@ -293,25 +305,44 @@ namespace DynamoDB_intro
                 case "edit":
                     Console.WriteLine("[system] 수정하고자 하는 데이터의 id를 입력해주세요");
                     Console.Write(">> ");
-                    command = Console.ReadLine();
-                    JObject target = new JObject();
+                    string command = Console.ReadLine();
                     foreach(JObject json in jsonArray){
                         if(json.GetValue("id").ToString() == command){
-                            target = json;
+                            break;
+                        } else {
+                            idx++;
                         }
                     }
-                    Console.WriteLine(target);
-
-                    // 수정할 field와 그 값 입력받아서 target의 값 수정
+                    Console.WriteLine("target item : " + jsonArray[idx]);
+                    recurEdit((JObject)jsonArray[idx], "추가할 item");
+                    Console.WriteLine("edit result : " + jsonArray[idx]);
+                    sw.WriteLine(jsonArray.ToString());
+                    sw.Close();
+                    Console.WriteLine("edited export.json successfully!");
                     break;
-
-
-
-
 
                 // 데이터 삭제
                 case "delete":
-                    // edit과 마찬가지로 id로 찾고 해당 데이터 제외한 나머지 다시 저장
+                    Console.WriteLine("[system] 삭제하고자 하는 데이터의 id를 입력해주세요");
+                    Console.Write(">> ");
+                    command = Console.ReadLine();
+                    
+                    foreach(JObject json in jsonArray){
+                        if(json.GetValue("id").ToString() == command){
+                            break;
+                        } else {
+                            idx++;
+                        }
+                    }
+                    Console.WriteLine("target item : " + jsonArray[idx]);
+                    Console.WriteLine("is this item correct? [y/n]");
+                    command = Console.ReadLine();
+                    if(command == "y"){
+                        jsonArray.Remove(jsonArray[idx]);
+                        sw.WriteLine(jsonArray.ToString());
+                        sw.Close();
+                        Console.WriteLine("removed from export.json successfully!");
+                    }
                     break;
             }
             return;
