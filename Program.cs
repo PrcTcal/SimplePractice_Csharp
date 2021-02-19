@@ -11,6 +11,7 @@ using Newtonsoft.Json.Linq;
 using System.Threading.Tasks;
 using System.Collections.Generic;
 using System.Diagnostics;
+using testModule;
 
 namespace DynamoDB_intro
 {
@@ -172,6 +173,26 @@ namespace DynamoDB_intro
             return;
         }
 
+        public Dictionary<string, AttributeValue> getMap(JObject obj){
+            Dictionary<string, AttributeValue> result = new Dictionary<string, AttributeValue>();
+            
+            foreach(var item in obj){
+                //Console.WriteLine(item.Key + "\t" + item.Value.Type.ToString() + "\t" + item.Value.ToString());
+                if(item.Value.Type.ToString() == "String"){
+                    result[item.Key] = new AttributeValue { S = item.Value.ToString() };
+                } else if(item.Value.Type.ToString() == "Integer"){
+                    result[item.Key] = new AttributeValue { N = item.Value.ToString() };
+                } else if(item.Value.Type.ToString() == "Boolean"){
+                    result[item.Key] = new AttributeValue { BOOL = item.Value.ToString().ToLower() == "true" ? true : false };
+                } else if(item.Value.Type.ToString() == "Object"){
+                    result[item.Key] = new AttributeValue { M = getMap((JObject)item.Value) };
+                }
+            }
+            
+            return result;
+
+        }
+
         public void import(string tableName){
             Stopwatch sw = new Stopwatch();
             sw.Start();
@@ -186,10 +207,18 @@ namespace DynamoDB_intro
             List<WriteRequest> writeReq = new List<WriteRequest>();
             Dictionary<string, AttributeValue> item;
 
-            for(int fileNum = 0 ; fileNum < 10 ; fileNum++){
+            for(int fileNum = 0 ; fileNum < 1 ; fileNum++){
                 JArray jsonArray = JArray.Parse(File.ReadAllText(String.Format("./exportData/export{0}.json", fileNum)));
                 int count = 0, dummyNum = 0, i = 0;
                 foreach(JObject obj in jsonArray){
+                    music = obj.ToObject<MusicModel>();
+                    item = getMap(obj);
+                    item["dummy"] = new AttributeValue{ N = Convert.ToString(dummyNum++) };
+                    item["srchArtist"] = new AttributeValue{ S = music.Artist };
+                    item["srchsongTitle"] = new AttributeValue{ S = music.songTitle };
+                    item["srchidx"] = new AttributeValue{ N = Convert.ToString(music.idx) };
+                    Console.WriteLine(item);
+                    /*
                     item = new Dictionary<string, AttributeValue>();
                     music = obj.ToObject<MusicModel>();
                     item["dummy"] = new AttributeValue{ N = Convert.ToString(dummyNum++) };
@@ -205,6 +234,7 @@ namespace DynamoDB_intro
                     item["srchArtist"] = new AttributeValue{ S = music.Artist };
                     item["srchsongTitle"] = new AttributeValue{ S = music.songTitle };
                     item["srchidx"] = new AttributeValue{ N = Convert.ToString(music.idx) };
+                    */
                     writeReq.Add(new WriteRequest{
                         PutRequest = new PutRequest{ 
                             Item = item
@@ -287,22 +317,29 @@ namespace DynamoDB_intro
             StreamWriter sw = new StreamWriter(new FileStream("./exportData/export7.json", FileMode.Create, FileAccess.Write));
             JObject inputData = new JObject();
             int idx = 0;
-
+            JArray result = new JArray();
             switch(convertOption){
 
                 // 데이터 추가
                 case "add":
+                    foreach(JObject obj in jsonArray){
+                        result.Add(modules.addFunc(obj));
+                    }
+                    /*
                     inputData["id"] = Guid.NewGuid(); 
                     inputData = recurAdd(inputData, "추가할 item");
                     Console.WriteLine(inputData);
                     jsonArray.Add(inputData);
+                    */
                     sw.WriteLine(jsonArray.ToString());
                     sw.Close();
                     Console.WriteLine("added to export.json successfully!");
+                    
                     break;
 
                 // 데이터 수정
                 case "edit":
+                    /*
                     Console.WriteLine("[system] 수정하고자 하는 데이터의 id를 입력해주세요");
                     Console.Write(">> ");
                     string command = Console.ReadLine();
@@ -316,6 +353,10 @@ namespace DynamoDB_intro
                     Console.WriteLine("target item : " + jsonArray[idx]);
                     recurEdit((JObject)jsonArray[idx], "추가할 item");
                     Console.WriteLine("edit result : " + jsonArray[idx]);
+                    */
+                    foreach(JObject obj in jsonArray){
+                        result.Add(modules.editFunc(obj));
+                    }
                     sw.WriteLine(jsonArray.ToString());
                     sw.Close();
                     Console.WriteLine("edited export.json successfully!");
@@ -323,6 +364,7 @@ namespace DynamoDB_intro
 
                 // 데이터 삭제
                 case "delete":
+                    /*
                     Console.WriteLine("[system] 삭제하고자 하는 데이터의 id를 입력해주세요");
                     Console.Write(">> ");
                     command = Console.ReadLine();
@@ -343,6 +385,13 @@ namespace DynamoDB_intro
                         sw.Close();
                         Console.WriteLine("removed from export.json successfully!");
                     }
+                    */
+                    foreach(JObject obj in jsonArray){
+                        result.Add(modules.deleteFunc(obj));
+                    }
+                    sw.WriteLine(jsonArray.ToString());
+                    sw.Close();
+                    Console.WriteLine("edited export.json successfully!");
                     break;
             }
             return;
@@ -376,6 +425,9 @@ namespace DynamoDB_intro
                     case "convert":
                         db.convert(cmd[1]);
                         GC.Collect();
+                        break;
+                    case "test":
+                        //db.getMap();
                         break;
                 }
             }
