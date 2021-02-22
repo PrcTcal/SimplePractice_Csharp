@@ -52,7 +52,7 @@ namespace DynamoDB_intro
             AppSettingsReader ar = new AppSettingsReader();
             var credentials = new BasicAWSCredentials((string)ar.GetValue("accessKeyId", typeof(string)), (string)ar.GetValue("secretAccessKey", typeof(string)));
             var client = new AmazonDynamoDBClient(credentials, RegionEndpoint.APNortheast2);
-
+            
             Console.WriteLine("export process executed => ");
 
             
@@ -61,7 +61,6 @@ namespace DynamoDB_intro
             for(int k = 0 ; k < 2 ; k++){
                 Parallel.For(k * totalSegments, (k + 1) * totalSegments, segment => {
                     //Console.WriteLine("segment : " + segment);
-                    Table table = Table.LoadTable(client, tableName);
                     Dictionary<string, AttributeValue> startKey = null;
                     MusicModel music = new MusicModel();
                     JArray jsonArray = new JArray();
@@ -70,7 +69,7 @@ namespace DynamoDB_intro
                         ScanRequest request = new ScanRequest{
                             TableName = tableName,
                             ExclusiveStartKey = startKey,
-                            ProjectionExpression = "id, Artist, songTitle, info, actv, idx",
+                            //ProjectionExpression = "id, Artist, songTitle, info, actv, idx",
                             FilterExpression = "dummy between :v_start and :v_end",
                             ExpressionAttributeValues = new Dictionary<string, AttributeValue> {
                                 {":v_start", new AttributeValue {
@@ -84,20 +83,9 @@ namespace DynamoDB_intro
                         
                         ScanResult result = client.Scan(request);
                         List<Dictionary<string, AttributeValue>> items = result.Items;
-                        
                         foreach(Dictionary<string, AttributeValue> item in items){
                             try{
-                                music.id = item["id"].S;
-                                music.Artist = item["Artist"].S;
-                                music.songTitle = item["songTitle"].S;
-                                Dictionary<string, string> dict = new Dictionary<string, string>();
-                                dict.Add("album", item["info"].M["album"].S);
-                                dict.Add("release", item["info"].M["release"].S);
-                                music.info = dict;
-                                music.idx = int.Parse(item["idx"].N);
-                                music.actv = item["actv"].BOOL;
-                                string jsonText = JsonConvert.SerializeObject(music, Formatting.None);
-                                JObject json = JObject.Parse(jsonText);
+                                JObject json = getJObject(item);
                                 jsonArray.Add(json);
                                 if(jsonArray.Count == 100000){
                                     Console.WriteLine("size : " + jsonArray.Count);
@@ -120,7 +108,7 @@ namespace DynamoDB_intro
 
             /*
             // 단일 scan
-            Table table = Table.LoadTable(client, (string)ar.GetValue("tableName", typeof(string)));
+            Table table = Table.LoadTable(client, "test01-music2");
             Dictionary<string, AttributeValue> startKey = null;
             MusicModel music = new MusicModel();
             JArray jsonArray = new JArray();
@@ -137,24 +125,14 @@ namespace DynamoDB_intro
                 
                 foreach(Dictionary<string, AttributeValue> item in items){
                     try{
-                        music.id = item["id"].S;
-                        music.Artist = item["Artist"].S;
-                        music.songTitle = item["songTitle"].S;
-                        Dictionary<string, string> dict = new Dictionary<string, string>();
-                        dict.Add("album", item["info"].M["album"].S);
-                        dict.Add("release", item["info"].M["release"].S);
-                        music.info = dict;
-                        music.idx = int.Parse(item["idx"].N);
-                        music.actv = item["actv"].BOOL;
-                        string jsonText = JsonConvert.SerializeObject(music, Formatting.None);
-                        JObject json = JObject.Parse(jsonText);
+                        JObject json = getJObject(item);
                         jsonArray.Add(json);
                         if(jsonArray.Count == 1000000){
                             Console.WriteLine("size : " + jsonArray.Count);
-                            StreamWriter fs = new StreamWriter(new FileStream("./exportData/export.json", FileMode.Create));
+                            StreamWriter fs = new StreamWriter(new FileStream($"./exportData/export{fileNum}.json", FileMode.Create));
                             fs.WriteLine(jsonArray.ToString());
                             fs.Close();
-                            Console.WriteLine("saved export.json successfully!");
+                            Console.WriteLine($"saved export{fileNum++}.json successfully!");
                             jsonArray = new JArray();
                         }
                     } catch(Exception e){
@@ -171,6 +149,32 @@ namespace DynamoDB_intro
             Console.WriteLine(sw.ElapsedMilliseconds.ToString() + "ms");
             Console.WriteLine("export process terminated");
             return;
+        }
+
+        public JObject getJObject(Dictionary<string, AttributeValue> obj){
+            JObject result = new JObject();
+            string[] excludeAttribute = new string[4]{"dummy", "srchArtist", "srchsongTitle", "srchidx"};
+            var list = new List<string>();
+            list.AddRange(excludeAttribute);
+            foreach(var item in obj){
+                if(!list.Contains(item.Key)){
+                    if(item.Value.S != null){
+                        result.Add(item.Key, item.Value.S);
+                    } else if(item.Value.N != null){
+                        result.Add(item.Key, Convert.ToInt32(item.Value.N));
+                    } else if(item.Value.IsBOOLSet){
+                        result.Add(item.Key, item.Value.BOOL);
+                    } else if(item.Value.IsMSet){
+                        Dictionary<string, AttributeValue> dic = new Dictionary<string, AttributeValue>();
+                        foreach(var it in item.Value.M){
+                            dic.Add(it.Key, it.Value);
+                        }
+                        result.Add(item.Key, getJObject(dic));
+                    }
+                }
+                
+            }
+            return result;
         }
 
         public Dictionary<string, AttributeValue> getMap(JObject obj){
@@ -202,39 +206,20 @@ namespace DynamoDB_intro
 
             Console.WriteLine("import process executed => ");
 
-            MusicModel music;
             Dictionary<string, List<WriteRequest>> reqItems = new Dictionary<string, List<WriteRequest>>();
             List<WriteRequest> writeReq = new List<WriteRequest>();
             Dictionary<string, AttributeValue> item;
 
-            for(int fileNum = 0 ; fileNum < 1 ; fileNum++){
+            for(int fileNum = 0 ; fileNum < 10 ; fileNum++){
                 JArray jsonArray = JArray.Parse(File.ReadAllText(String.Format("./exportData/export{0}.json", fileNum)));
                 int count = 0, dummyNum = 0, i = 0;
                 foreach(JObject obj in jsonArray){
-                    music = obj.ToObject<MusicModel>();
                     item = getMap(obj);
                     item["dummy"] = new AttributeValue{ N = Convert.ToString(dummyNum++) };
-                    item["srchArtist"] = new AttributeValue{ S = music.Artist };
-                    item["srchsongTitle"] = new AttributeValue{ S = music.songTitle };
-                    item["srchidx"] = new AttributeValue{ N = Convert.ToString(music.idx) };
-                    Console.WriteLine(item);
-                    /*
-                    item = new Dictionary<string, AttributeValue>();
-                    music = obj.ToObject<MusicModel>();
-                    item["dummy"] = new AttributeValue{ N = Convert.ToString(dummyNum++) };
-                    item["id"] = new AttributeValue{ S = music.id };
-                    item["Artist"] = new AttributeValue{ S = music.Artist };
-                    item["songTitle"] = new AttributeValue{ S = music.songTitle };
-                    Dictionary<string, AttributeValue> info = new Dictionary<string, AttributeValue>();
-                    info["album"] = new AttributeValue { S = music.info["album"] };
-                    info["release"] = new AttributeValue { S = music.info["release"] };
-                    item["info"] = new AttributeValue{ M = info };
-                    item["idx"] = new AttributeValue{ N = Convert.ToString(music.idx) };
-                    item["actv"] = new AttributeValue{ BOOL = music.actv };
-                    item["srchArtist"] = new AttributeValue{ S = music.Artist };
-                    item["srchsongTitle"] = new AttributeValue{ S = music.songTitle };
-                    item["srchidx"] = new AttributeValue{ N = Convert.ToString(music.idx) };
-                    */
+                    item["srchArtist"] = new AttributeValue{ S = obj.GetValue("Artist").ToString() };
+                    item["srchsongTitle"] = new AttributeValue{ S = obj.GetValue("songTitle").ToString() };
+                    item["srchidx"] = new AttributeValue{ N = Convert.ToString(obj.GetValue("idx").ToString()) };
+
                     writeReq.Add(new WriteRequest{
                         PutRequest = new PutRequest{ 
                             Item = item
@@ -308,107 +293,54 @@ namespace DynamoDB_intro
             } while(command != "done");
         }
 
-        public void convert(string convertOption){
-            Console.WriteLine("reading export.json...");
-            StreamReader sr = new StreamReader(new FileStream("./exportData/export7.json", FileMode.Open, FileAccess.Read));
+        public void convert(string convertOption, int fileNum){
+            Console.WriteLine($"reading export{fileNum}.json...");
+            StreamReader sr = new StreamReader(new FileStream($"./exportData/export{fileNum}.json", FileMode.Open, FileAccess.Read));
             JArray jsonArray = JsonConvert.DeserializeObject<JArray>(sr.ReadToEnd());
             sr.Close();
             Console.WriteLine("read finished - item count : " + jsonArray.Count);
-            StreamWriter sw = new StreamWriter(new FileStream("./exportData/export7.json", FileMode.Create, FileAccess.Write));
-            JObject inputData = new JObject();
-            int idx = 0;
             JArray result = new JArray();
-            switch(convertOption){
 
-                // 데이터 추가
-                case "add":
-                    foreach(JObject obj in jsonArray){
-                        result.Add(modules.addFunc(obj));
-                    }
-                    /*
-                    inputData["id"] = Guid.NewGuid(); 
-                    inputData = recurAdd(inputData, "추가할 item");
-                    Console.WriteLine(inputData);
-                    jsonArray.Add(inputData);
-                    */
-                    sw.WriteLine(jsonArray.ToString());
-                    sw.Close();
-                    Console.WriteLine("added to export.json successfully!");
-                    
-                    break;
-
-                // 데이터 수정
-                case "edit":
-                    /*
-                    Console.WriteLine("[system] 수정하고자 하는 데이터의 id를 입력해주세요");
-                    Console.Write(">> ");
-                    string command = Console.ReadLine();
-                    foreach(JObject json in jsonArray){
-                        if(json.GetValue("id").ToString() == command){
-                            break;
-                        } else {
-                            idx++;
-                        }
-                    }
-                    Console.WriteLine("target item : " + jsonArray[idx]);
-                    recurEdit((JObject)jsonArray[idx], "추가할 item");
-                    Console.WriteLine("edit result : " + jsonArray[idx]);
-                    */
-                    foreach(JObject obj in jsonArray){
-                        result.Add(modules.editFunc(obj));
-                    }
-                    sw.WriteLine(jsonArray.ToString());
-                    sw.Close();
-                    Console.WriteLine("edited export.json successfully!");
-                    break;
-
-                // 데이터 삭제
-                case "delete":
-                    /*
-                    Console.WriteLine("[system] 삭제하고자 하는 데이터의 id를 입력해주세요");
-                    Console.Write(">> ");
-                    command = Console.ReadLine();
-                    
-                    foreach(JObject json in jsonArray){
-                        if(json.GetValue("id").ToString() == command){
-                            break;
-                        } else {
-                            idx++;
-                        }
-                    }
-                    Console.WriteLine("target item : " + jsonArray[idx]);
-                    Console.WriteLine("is this item correct? [y/n]");
-                    command = Console.ReadLine();
-                    if(command == "y"){
-                        jsonArray.Remove(jsonArray[idx]);
-                        sw.WriteLine(jsonArray.ToString());
-                        sw.Close();
-                        Console.WriteLine("removed from export.json successfully!");
-                    }
-                    */
-                    foreach(JObject obj in jsonArray){
-                        result.Add(modules.deleteFunc(obj));
-                    }
-                    sw.WriteLine(jsonArray.ToString());
-                    sw.Close();
-                    Console.WriteLine("edited export.json successfully!");
-                    break;
+            foreach(JObject obj in jsonArray){
+                if(convertOption == "add") result.Add(modules.addFunc(obj));           // field 추가 모듈
+                if(convertOption == "edit") result.Add(modules.editFunc(obj));        // field 수정 모듈
+                if(convertOption == "delete") result.Add(modules.deleteFunc(obj));      // field 삭제 모듈
             }
+
+            StreamWriter sw = new StreamWriter(new FileStream($"./exportData/export{fileNum}.json", FileMode.Create, FileAccess.Write));
+            sw.WriteLine(jsonArray.ToString());
+            sw.Close();
+            Console.WriteLine($"added to export{fileNum}.json successfully!");
             return;
         }
-
+        public void test(){
+            AppSettingsReader ar = new AppSettingsReader();
+            var credentials = new BasicAWSCredentials((string)ar.GetValue("accessKeyId", typeof(string)), (string)ar.GetValue("secretAccessKey", typeof(string)));
+            var client = new AmazonDynamoDBClient(credentials, RegionEndpoint.APNortheast2);
+            Table table = Table.LoadTable(client, "test01-music2");
+            string[] fields;
+            Console.WriteLine(table.Attributes);
+            foreach(var item in table.Attributes){
+                Console.WriteLine(item.AttributeName);
+            }
+        }
         static void Main(string[] args)
         {
             DdbIntro db = new DdbIntro();
             string cmdLine = null;
             while(cmdLine != "exit"){
+                Console.WriteLine("=============================================<< commands >>=============================================");
+                Console.WriteLine("export [Table name]                          : export data from Table");
+                Console.WriteLine("import [Table name]                          : import data to Table");
+                Console.WriteLine("convert [Convert Option]                     : convert data in export.json with converting option");
+                Console.WriteLine("exit                                         : terminating CLI process");
+                Console.WriteLine("========================================================================================================\n");
                 Console.Write(">> ");
                 cmdLine = Console.ReadLine();
                 string[] cmd = cmdLine.Split(' ');
                 switch(cmd[0]){
                     case "export":
                         if(cmd.Length == 2){
-                            Console.WriteLine("export");
                             db.export(cmd[1]);
                             GC.Collect();
                         } else {
@@ -423,11 +355,13 @@ namespace DynamoDB_intro
                         }    
                         break;
                     case "convert":
-                        db.convert(cmd[1]);
+                        for(int i = 0 ; i < 10 ; i++){
+                            db.convert(cmd[1], i);
+                        }
                         GC.Collect();
                         break;
                     case "test":
-                        //db.getMap();
+                        db.test();
                         break;
                 }
             }

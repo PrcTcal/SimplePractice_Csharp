@@ -17,6 +17,11 @@ namespace testModule{
             } else {
                 json["upper"] = true;
             }
+
+            if(Convert.ToInt32(json.GetValue("idx").ToString()) < 1000){
+                json["info"]["final"] = new JObject();
+                json["info"]["final"]["correct"] = true;
+            }
             return json;
         }
 
