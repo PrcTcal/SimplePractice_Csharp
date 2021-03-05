@@ -14,6 +14,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using testModule;
 using DBconnection;
+using DBFconnection;
 
 namespace DynamoDB_intro
 {
@@ -459,6 +460,9 @@ namespace DynamoDB_intro
                         break;
                     case "db":
                         db.connectDB(cmd[1]);
+                        break;
+                    case "dbf":
+                        dbf.reader();
                         break;
                     case "test":
                         db.test();
