@@ -1,69 +1,61 @@
 using System;
-using System.Data;
-using System.Data.OleDb;
+using System.IO;
 using DbfDataReader;
+using Newtonsoft.Json.Linq;
 
-namespace DBFconnection{
-    class dbf{
 
-        public static void connect(string fileName){
-            string strConn = "Provider=Microsoft.Jet.OLEDB.4.0; Data Source=./dbf;";
-            OleDbConnection conn = new OleDbConnection(strConn);
+namespace DBFconnection
+{
+    class dbf
+    {
 
-            conn.Open();
-            Console.WriteLine("Database : " + conn.Database);
-            Console.WriteLine("DataSource : " + conn.DataSource);
-            Console.WriteLine("Version : " + conn.ServerVersion);
-            Console.WriteLine("State : " + conn.State);
-
-            conn.Close();
-            Console.WriteLine("State : " + conn.State);
-
-            string sql = "select * from " + fileName;
-            OleDbCommand cmd = new OleDbCommand(sql, conn);
-            conn.Open();
-            DataSet ds = new DataSet();
-            OleDbDataAdapter oda = new OleDbDataAdapter(cmd);
-            oda.Fill(ds);
-            Console.WriteLine(ds.Tables);
-            conn.Close();
-        }
-
-        public static void reader(){
+        public static void reader()
+        {
             string dbfPath = "./dbf/dbase_83.dbf";
-            /*
-            using (var dbfTable = new DbfTable(dbfPath, EncodingProvider.UTF8))
+            var options = new DbfDataReaderOptions
             {
-                var dbfRecord = new DbfRecord(dbfTable);
-                while (dbfTable.Read(dbfRecord))
-                {
-                    for(int i = 0 ; i < dbfRecord.Values.Count - 1 ; i++){
-                        Console.WriteLine(dbfRecord.Values[i].ToString() + "\t" + dbfRecord.Values[i].GetType().ToString());
-                    }
-                    //Console.WriteLine(dbfRecord.Values[5].ToString() == null);
-                }
-            }
-            */
-            var options = new DbfDataReaderOptions{
                 SkipDeletedRecords = true,
                 Encoding = EncodingProvider.UTF8
             };
-            object[] objs = new object[6];
-            int quant = 0;
-            using(var dbfReader = new DbfDataReader.DbfDataReader(dbfPath, options)){
-                while(dbfReader.Read()){
-                    string[] names = new string[dbfReader.FieldCount];
-                    for(int i = 0 ; i < dbfReader.FieldCount ; i++){
-                        names[i] = dbfReader.GetName(i);
-                        if(dbfReader.DbfRecord.Values[i].GetType() != typeof(DbfDataReader.DbfValueMemo)){
-                            Console.WriteLine(names[i] + " : " + dbfReader.DbfRecord.Values[i].ToString());
+
+            JArray rs = new JArray();
+            using (var dbfReader = new DbfDataReader.DbfDataReader(dbfPath, options))
+            {
+                while (dbfReader.Read())
+                {
+                    JObject json_object = new JObject();
+                    for (int i = 0; i < dbfReader.FieldCount; i++)
+                    {
+                        if (dbfReader.DbfRecord.Values[i].GetType() != typeof(DbfDataReader.DbfValueMemo))
+                        {
+                            if(dbfReader.DbfRecord.Values[i].GetType() == typeof(DbfDataReader.DbfValueInt))
+                            {
+                                json_object.Add(dbfReader.GetName(i), Convert.ToInt32(dbfReader.DbfRecord.Values[i].ToString()));
+                            }
+                            else if(dbfReader.DbfRecord.Values[i].GetType() == typeof(DbfDataReader.DbfValueDecimal))
+                            {
+                                json_object.Add(dbfReader.GetName(i), Convert.ToDecimal(dbfReader.DbfRecord.Values[i].ToString()));
+                            }
+                            else if(dbfReader.DbfRecord.Values[i].GetType() == typeof(DbfDataReader.DbfValueBoolean))
+                            {
+                                json_object.Add(dbfReader.GetName(i), dbfReader.DbfRecord.Values[i].ToString() == "T" ? true : false);
+                            }
+                            else
+                            {
+                                json_object.Add(dbfReader.GetName(i), dbfReader.DbfRecord.Values[i].ToString());
+                            }
                         }
                     }
-                    Console.WriteLine("=======================================");
+                    rs.Add(json_object);
                 }
+                
+                StreamWriter fs = new StreamWriter(new FileStream(String.Format("./exportData/export.json"), FileMode.Create));
+                fs.WriteLine(rs.ToString());
+                fs.Close();
+                
             }
-            
+
         }
-        
+
     }
 }

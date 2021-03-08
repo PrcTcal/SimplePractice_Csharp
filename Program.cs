@@ -18,34 +18,7 @@ using DBFconnection;
 
 namespace DynamoDB_intro
 {
-    class MusicModel{
-
-        public string id{
-            get; set;
-        }
-        public string Artist{
-            get; set;
-        }
-        public string songTitle{
-            get; set;
-        }
-        public Dictionary<string, string> info{
-            get; set;
-        }
-        public int idx{
-            get; set;
-        }
-        public bool actv{
-            get; set;
-        }
-
-
-        public override string ToString(){
-            return "Item : {{\n\tid : " + id + "\n\tArtist : " + Artist + "\n\tsongTitle : " + songTitle + "\n\tinfo : " + info + 
-            "\n\tidx : " + idx + "\n\tactv : " + actv + "\n}}";
-        }
-
-    }
+    
     public partial class DdbIntro
     {
 
@@ -395,7 +368,7 @@ namespace DynamoDB_intro
                 startKey = result.LastEvaluatedKey;
             } while(startKey != null && startKey.Count > 0);
 
-/*
+            /*  query로 전체 데이터 가져오기
             int cnt = 0;
             for(int i = 0 ; i < 500 ; i++){
                 QueryRequest request = new QueryRequest{
